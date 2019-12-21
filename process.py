@@ -33,11 +33,7 @@ def process(df: pd.DataFrame):
 
             sent_doc = sent.as_doc()
 
-            # print(f'\n{sent}'.replace("\n", " "))
-
             for match_id, start, end in matcher(sent_doc):
-                # print(f"phrase: {sent_doc[start:end].text}")
-
                 rows.append({
                     "filename": opinion.filename,
                     "phrase": sent_doc[start:end].text.lower(),
