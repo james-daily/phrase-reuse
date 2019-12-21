@@ -1,4 +1,5 @@
 import argparse
+import re
 
 import pandas as pd
 import spacy
@@ -22,9 +23,14 @@ def process(df: pd.DataFrame):
     matcher.add(f"NoProperNouns", None, not_proper_noun)
 
     for i, opinion in tqdm(df.iterrows(), total=len(df)):
-        doc = nlp(opinion.text)
+        doc = nlp(re.sub(r"\s?\n\s+", " ", opinion.text))
 
         for sent in doc.sents:
+
+            # skip direct quotations
+            if '"' in sent[0].text and '"' in sent[-1].text:
+                continue
+
             sent_doc = sent.as_doc()
 
             # print(f'\n{sent}'.replace("\n", " "))
@@ -35,6 +41,7 @@ def process(df: pd.DataFrame):
                 rows.append({
                     "filename": opinion.filename,
                     "phrase": sent_doc[start:end].text.lower(),
+                    "lemmas": " ".join([t.lemma_ for t in sent_doc[start:end]]),
                     "length": end - start
                 })
 
@@ -57,6 +64,7 @@ def main():
     else:
         raise ValueError("unknown input file type", args.input_file)
 
+    # majority opinions only for now
     df = df[df.opinion_type == "MO"]
 
     if args.debug:
