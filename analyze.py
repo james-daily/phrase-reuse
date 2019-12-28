@@ -1,42 +1,61 @@
 import argparse
 
 import pandas as pd
+from tqdm import tqdm
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--lemmas", "-l", action="store_true")
     args = parser.parse_args()
 
     print("loading opinion data")
     opinions = pd.read_csv("data/opinions.csv", usecols=["filename", "year", "lexis_cite", "opinion_type", "author"])
 
-    if args.lemmas:
-        print("loading lemmatized phrases")
-        phrases = pd.read_csv("data/phrases.csv", usecols=["filename", "length", "lemmas"]).rename(
-            columns={"lemmas": "phrase"})
-    else:
-        print("loading verbatim phrases")
-        phrases = pd.read_csv("data/phrases.csv", usecols=["filename", "length", "phrase"])
+    print("loading phrases")
+    phrases = pd.read_csv("data/phrases.csv", usecols=["filename", "length", "phrase"])
 
     print("merging phrases with opinion data")
     df = phrases.merge(opinions)
 
-    # drop phrases that occur in the first 10 years on the assumption that they are commonplace
-    print("dropping old phrases")
-    old_phrases = df[df.year <= (df.year.min() + 10)].phrase
-    df = df[~df.phrase.isin(old_phrases)]
+    # sort df by the phrases, since that will be the most intensive search
+    print("sorting by phrase")
+    df = df.set_index("phrase").sort_index()
 
-    print("calculating phrase counts")
-    phrase_counts = df.groupby(["phrase", "length"]).filename.count().reset_index().rename(
-        columns={"filename": "count"}).sort_values(["count", "length"], ascending=[False, False])
+    antecedent_counts = []
 
-    print("writing out phrase count data")
-    if args.lemmas:
-        outfilename = "lemmatized_phrase_counts.csv"
-    else:
-        outfilename = "phrase_counts.csv"
-    phrase_counts.to_csv(f"data/{outfilename}", index=False)
+    print("finding antecedents")
+
+    # for each opinion in the most recent year
+    for filename in tqdm(df[df.year == opinions.year.max()].filename.unique()):
+        # get the opinion author
+        author = opinions[opinions.filename == filename].author.iloc[0]
+
+        # TODO generalize this to producing data for all phrase lengths
+
+        # get this opinion's unique unigrams
+        unigrams = df[(df.filename == filename)
+                      & (df["length"] == 1)].index.unique().values
+
+        # count how many also occur in opinions before this year and written by others
+        antecedents = df[(df.index.isin(unigrams))
+                         & (df.author != author)
+                         & (df.year < opinions.year.max())
+                         & (df["length"] == 1)].index.unique().values
+
+        antecedent_counts.append({
+            "filename": filename,
+            "unique_unigrams": len(unigrams),
+            "antecedents": len(antecedents)
+        })
+
+    antecedent_counts = pd.DataFrame(antecedent_counts)
+
+    antecedent_counts.to_csv("data/antecedent_counts.csv", index=False)
+
+    # # drop phrases that occur in the first 10 years on the assumption that they are commonplace
+    # print("dropping old phrases")
+    # old_phrases = df[df.year <= (df.year.min() + 10)].phrase
+    # df = df[~df.phrase.isin(old_phrases)]
 
 
 if __name__ == '__main__':
