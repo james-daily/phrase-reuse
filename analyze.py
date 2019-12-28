@@ -25,6 +25,9 @@ def main():
 
     print("finding antecedents")
 
+    # TODO parallelize this?  could be memory intensive given the size of the phrase df, but still
+    #  worth it even for a few chunks
+
     # for each opinion in the most recent year
     for filename in tqdm(df[df.year == opinions.year.max()].filename.unique()):
         # get the opinion author

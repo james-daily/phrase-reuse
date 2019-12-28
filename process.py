@@ -30,10 +30,12 @@ def process(df: pd.DataFrame):
         matcher.add(f"{length}", None, unigram + another * length)
 
     # use multiprocessing for speed, one batch per CPU
+    print("processing")
     with mp.Pool(mp.cpu_count()) as pool:
         results = [pool.apply_async(worker, (sub_df, nlp, matcher)) for sub_df in np.array_split(df, mp.cpu_count())]
         results = [r.get() for r in results]
 
+    print("combining results")
     phrases = pd.concat(results)
 
     return phrases
@@ -44,6 +46,8 @@ def worker(df, nlp, matcher):
 
     # for each opinion in the dataframe
     for i, opinion in df.iterrows():
+
+        print("processing", opinion.filename)
 
         # parse with spaCy
         doc = nlp(opinion.text)
@@ -80,12 +84,7 @@ def main():
     args = parser.parse_args()
 
     print("loading input file")
-    if args.input_file.endswith("pkl"):
-        df = pd.read_pickle(args.input_file)
-    elif args.input_file.endswith("csv"):
-        df = pd.read_csv(args.input_file)
-    else:
-        raise ValueError("unknown input file type", args.input_file)
+    df = pd.read_csv(args.input_file)
 
     # majority opinions only for now
     df = df[df.opinion_type == "MO"]
@@ -97,8 +96,8 @@ def main():
 
     phrases = process(df)
 
+    print("writing out results")
     phrases.to_csv("data/phrases.csv", index=False)
-    phrases.to_pickle("data/phrases.pkl")
 
 
 if __name__ == '__main__':

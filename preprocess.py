@@ -34,9 +34,6 @@ def preprocess(input_dir):
     print("writing out csv")
     df.to_csv("data/opinions.csv", index=False)
 
-    print("writing out pickle")
-    df.to_pickle("data/opinions.pkl")
-
 
 def main():
     parser = argparse.ArgumentParser()
