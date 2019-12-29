@@ -86,11 +86,9 @@ def main():
     print("loading input file")
     df = pd.read_csv(args.input_file)
 
-    # majority opinions only for now
-    df = df[df.opinion_type == "MO"]
-
     if args.debug:
         print("subsetting input for debugging")
+        df = df[df.opinion_type == "MO"]
         df = df[df.year > "2000"]
         df = df.head(mp.cpu_count() * 100)
 
