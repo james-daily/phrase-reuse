@@ -20,6 +20,20 @@ def preprocess(input_dir):
 
             with open(path, "r", encoding="latin-1") as f:
                 text = f.read()
+
+                # remove repeated spaces
+                text = re.sub(r" +", " ", text)
+
+                # remove markup such as
+                # "- - - - - - - - - - - - - - - Footnotes - - - - - - - - - - - - - - -"
+                text = re.sub(r"(?:- ){3,}(-)?[\w ]+?(?:- ){3,}(-)?", "", text)
+
+                # remove footnote numbers that run into the text
+                text = re.sub(r"^\d(?=[A-Z])", "", text, flags=re.MULTILINE)
+
+                # remove all newlines
+                text = re.sub(r"\n+", " ", text)
+
                 rows.append({
                     "filename": filename,
                     "text": text,
