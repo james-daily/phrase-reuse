@@ -1,15 +1,22 @@
 import argparse
 
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", "-d", action="store_true")
     args = parser.parse_args()
 
     print("loading opinion data")
-    opinions = pd.read_csv("data/opinions.csv", usecols=["filename", "year", "lexis_cite", "opinion_type", "author"])
+    opinions = pd.read_csv("data/opinions.csv", usecols=["filename", "year", "lexis_cite", "opinion_type", "author"], )
+
+    if args.debug:
+        print("subsetting to 10% sample for debugging")
+        opinion_sample = np.random.choice(opinions.filename, int(len(opinions) * 0.1), False)
+        opinions = opinions[opinions.filename.isin(opinion_sample)]
 
     print("loading phrases")
     phrases = pd.read_csv("data/phrases.csv", usecols=["filename", "length", "phrase"])
@@ -18,47 +25,57 @@ def main():
     df = phrases.merge(opinions)
 
     # sort df by the phrases, since that will be the most intensive search
-    print("sorting by phrase")
+    print("indexing and sorting by phrase")
     df = df.set_index("phrase").sort_index()
 
-    antecedent_counts = []
+    # pre-compute which phrases occur within the first 5 years of the data
+    old_phrases = df[df.year <= opinions.year.min() + 5]
 
-    print("finding antecedents")
+    # initialize results container
+    results = []
 
     # TODO parallelize this?  could be memory intensive given the size of the phrase df, but still
     #  worth it even for a few chunks
 
     # for each opinion in the most recent year
-    for filename in tqdm(df[df.year == opinions.year.max()].filename.unique()):
+    for filename in tqdm(df[df.year == opinions.year.max()].filename.unique(), desc="finding antecedents"):
         # get the opinion author
         author = opinions[opinions.filename == filename].author.iloc[0]
 
-        # TODO generalize this to producing data for all phrase lengths
+        # for each phrase length
+        for length in df["length"].unique():
+            # get this opinion's unique phrases of that length
+            phrases = df[(df.filename == filename)
+                         & (df["length"] == length)]
 
-        # get this opinion's unique unigrams
-        unigrams = df[(df.filename == filename)
-                      & (df["length"] == 1)].index.unique().values
+            # count how many also occur in opinions before this year and written by others
+            antecedents = df[(df.index.isin(phrases.index))
+                             & (df.author != author)
+                             & (df.year < opinions.year.max())
+                             & (df["length"] == length)]
 
-        # count how many also occur in opinions before this year and written by others
-        antecedents = df[(df.index.isin(unigrams))
-                         & (df.author != author)
-                         & (df.year < opinions.year.max())
-                         & (df["length"] == 1)].index.unique().values
+            # count how many of those phrases are *only* found in opinions written after the first
+            # 5 years of data (i.e. trying to exclude generic legal phrasing that would, in some sense,
+            # be "out of copyright")
+            modern_antecedents = antecedents[~antecedents.index.isin(old_phrases.index)]
 
-        antecedent_counts.append({
-            "filename": filename,
-            "unique_unigrams": len(unigrams),
-            "antecedents": len(antecedents)
-        })
+            phrase_count = phrases.index.nunique()
+            antecedent_count = antecedents.index.nunique()
+            modern_antecedent_count = modern_antecedents.index.nunique()
 
-    antecedent_counts = pd.DataFrame(antecedent_counts)
+            results.append({
+                "filename": filename,
+                "phrase_length": length,
+                "n_phrases": phrase_count,
+                "n_antecedents": antecedent_count,
+                "n_modern_antecedents": modern_antecedent_count
+            })
 
-    antecedent_counts.to_csv("data/antecedent_counts.csv", index=False)
+    results = pd.DataFrame(results)
+    results["antecedent_fraction"] = results.n_antecedents / results.n_phrases
+    results["modern_antecedent_fraction"] = results.n_modern_antecedents / results.n_phrases
 
-    # # drop phrases that occur in the first 10 years on the assumption that they are commonplace
-    # print("dropping old phrases")
-    # old_phrases = df[df.year <= (df.year.min() + 10)].phrase
-    # df = df[~df.phrase.isin(old_phrases)]
+    results.to_csv("data/antecedent_counts.csv", index=False)
 
 
 if __name__ == '__main__':
