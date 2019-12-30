@@ -13,16 +13,15 @@ def process(df: pd.DataFrame):
 
     matcher = Matcher(nlp.vocab)
 
-    # the basic pattern matches tokens that are not proper nouns, punctuation, space, symbols, numbers, or
-    # unrecognized tokens
+    # the basic pattern matches tokens that are not punctuation, spaces, symbols, numbers, or unrecognized tokens
     unigram = [
-        {"POS": {"NOT_IN": ["PROPN", "PUNCT", "SPACE", "SYM", "NUM", "X"]}}
+        {"POS": {"NOT_IN": ["PUNCT", "SPACE", "SYM", "NUM", "X"]}}
     ]
 
     # optional comma allows for comma-delimited phrases
     another = [
         {"TEXT": ",", "OP": "?"},
-        {"POS": {"NOT_IN": ["PROPN", "PUNCT", "SPACE", "SYM", "NUM", "X"]}}
+        {"POS": {"NOT_IN": ["PUNCT", "SPACE", "SYM", "NUM", "X"]}}
     ]
 
     # add patterns for unigrams, bigrams, trigrams
@@ -61,6 +60,13 @@ def worker(df, nlp, matcher):
 
             # convert the sentence span into a doc
             sent_doc = sent.as_doc()
+
+            # add the entire sentence
+            rows.append({
+                "filename": opinion.filename,
+                "phrase": sent_doc.text.lower(),
+                "length": "sentence"
+            })
 
             # for each ngram match
             for match_id, start, end in matcher(sent_doc):
