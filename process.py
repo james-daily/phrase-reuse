@@ -64,7 +64,7 @@ def worker(df, nlp, matcher):
             # add the entire sentence
             rows.append({
                 "filename": opinion.filename,
-                "phrase": sent_doc.text.lower(),
+                "phrase": sent_doc.text.lower().strip(),
                 "length": "sentence"
             })
 
@@ -73,7 +73,7 @@ def worker(df, nlp, matcher):
                 # add to the results
                 rows.append({
                     "filename": opinion.filename,
-                    "phrase": sent_doc[start:end].text.lower(),
+                    "phrase": sent_doc[start:end].text.lower().strip(),
                     # we use this instead of `end - start` so that we don't count commas
                     "length": sent_doc.vocab.strings[match_id]
                 })
