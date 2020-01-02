@@ -24,18 +24,26 @@ def main():
     print("merging phrases with opinion data")
     df = phrases.merge(opinions)
 
+    print("dropping phrases duplicated within the same opinion")
+    df = df.drop_duplicates(subset=["filename", "phrase"])
+
     # sort df by the phrases, since that will be the most intensive search
     print("indexing and sorting by phrase")
     df = df.set_index("phrase").sort_index()
 
     # pre-compute which phrases occur within the first 5 years of the data
-    old_phrases = df[df.year <= opinions.year.min() + 5]
+    print("pre-computing phrases from the first 5 years of data")
+    old_phrases = df[df.year <= df.year.min() + 5]
+    # only keep a single instance of each old phrase, since that's sufficient for this purpose
+    old_phrases = old_phrases[~old_phrases.index.duplicated(keep="first")]
 
     # initialize results container
     results = []
 
     # TODO parallelize this?  could be memory intensive given the size of the phrase df, but still
-    #  worth it even for a few chunks
+    #  worth it even for a few chunks; runtime is around 4.5 hours right now
+
+    # TODO should also profile this code to identify the slow spots
 
     # for each opinion in the most recent year
     for filename in tqdm(df[df.year == opinions.year.max()].filename.unique(), desc="finding antecedents"):
@@ -54,9 +62,8 @@ def main():
                              & (df.year < opinions.year.max())
                              & (df["length"] == length)]
 
-            # count how many of those phrases are *only* found in opinions written after the first
-            # 5 years of data (i.e. trying to exclude generic legal phrasing that would, in some sense,
-            # be "out of copyright")
+            # count how many of those phrases are not found in the first 5 years of data
+            # (i.e. trying to exclude generic legal phrasing that would, in some sense, be "out of copyright")
             modern_antecedents = antecedents[~antecedents.index.isin(old_phrases.index)]
 
             phrase_count = phrases.index.nunique()
