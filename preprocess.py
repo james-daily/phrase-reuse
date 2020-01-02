@@ -31,8 +31,14 @@ def preprocess(input_dir):
                 # remove footnote numbers that run into the text
                 text = re.sub(r"^\d(?=[A-Z])", "", text, flags=re.MULTILINE)
 
+                # remove anything between square brackets, such as [HN1] or [**LEdHR1]
+                text = re.sub(r"\[.*?\]", "", text)
+
                 # remove all newlines
                 text = re.sub(r"\n+", " ", text)
+
+                # tidy up extraneous spaces
+                text = re.sub(r" +", " ", text)
 
                 rows.append({
                     "filename": filename,
@@ -45,8 +51,7 @@ def preprocess(input_dir):
 
     df = pd.DataFrame(rows)
 
-    print("writing out csv")
-    df.to_csv("data/opinions.csv", index=False)
+    return df
 
 
 def main():
@@ -54,7 +59,10 @@ def main():
     parser.add_argument("input_dir")
     args = parser.parse_args()
 
-    preprocess(args.input_dir)
+    df = preprocess(args.input_dir)
+
+    print("writing out csv")
+    df.to_csv("data/opinions.csv", index=False)
 
 
 if __name__ == '__main__':
