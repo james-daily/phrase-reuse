@@ -29,8 +29,9 @@ def process(df: pd.DataFrame):
         matcher.add(f"{length}", None, unigram + another * length)
 
     # use multiprocessing for speed, one batch per CPU
+    # but at most use only as many CPUs as we have rows
     print("processing")
-    with mp.Pool(mp.cpu_count()) as pool:
+    with mp.Pool(min(mp.cpu_count(), len(df))) as pool:
         results = [pool.apply_async(worker, (sub_df, nlp, matcher)) for sub_df in np.array_split(df, mp.cpu_count())]
         results = [r.get() for r in results]
 
