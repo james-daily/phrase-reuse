@@ -26,7 +26,7 @@ def process(df: pd.DataFrame):
 
     # add patterns for unigrams, bigrams, trigrams
     for length in range(0, 3):
-        matcher.add(f"{length}", None, unigram + another * length)
+        matcher.add(f"{length + 1}", None, unigram + another * length)
 
     # use multiprocessing for speed, one batch per CPU
     # but at most use only as many CPUs as we have rows
