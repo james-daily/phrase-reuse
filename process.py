@@ -62,20 +62,28 @@ def worker(df, nlp, matcher):
             # convert the sentence span into a doc
             sent_doc = sent.as_doc()
 
-            # add the entire sentence
-            rows.append({
-                "filename": opinion.filename,
-                "phrase": sent_doc.text.lower().strip(),
-                "length": "sentence"
-            })
+            # add the entire sentence, assuming it has a verb
+            # this avoids false positive "sentences" caused by citations
+            if any([t.pos_ in ["VERB", "AUX"] for t in sent_doc]):
+                rows.append({
+                    "filename": opinion.filename,
+                    "phrase": sent_doc.text.lower().strip(),
+                    "length": "sentence"
+                })
 
             # for each ngram match
             for match_id, start, end in matcher(sent_doc):
+                phrase = sent_doc[start:end].text.lower().strip()
+
+                # special case for underscores, which spaCy wrongly tags as nouns
+                if "_" in phrase:
+                    continue
+
                 # add to the results
                 rows.append({
                     "filename": opinion.filename,
-                    "phrase": sent_doc[start:end].text.lower().strip(),
-                    # we use this instead of `end - start` so that we don't count commas
+                    "phrase": phrase,
+                    # we use this instead of `end - start` so that we don't count commas as part of the length
                     "length": sent_doc.vocab.strings[match_id]
                 })
 
@@ -96,7 +104,7 @@ def main():
     if args.debug:
         print("subsetting input for debugging")
         df = df[df.opinion_type == "MO"]
-        df = df[df.year > "2000"]
+        df = df[df.year > 2000]
         df = df.head(mp.cpu_count() * 100)
 
     phrases = process(df)
