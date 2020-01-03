@@ -28,7 +28,8 @@ def main():
     # load the phrase data
     print("loading phrase data")
     if args.debug:
-        nrows = 200000
+        # this is roughly a 10% sample
+        nrows = 12 * 1000 * 1000
     else:
         nrows = None
 
@@ -42,6 +43,9 @@ def main():
     print("removing phrases from opinions on or after", year, "or written by", author)
     phrases = phrases[(phrases.year < year) & (phrases.author != author)]
 
+    print("dropping phrases duplicated within the same opinion")
+    df = df.drop_duplicates(subset=["filename", "phrase"])
+
     print("indexing phrases")
     phrases = phrases.set_index("phrase").sort_index()
 
@@ -51,19 +55,21 @@ def main():
     # for each phrase length
     for length in ["1", "2", "3", "sentence"]:
 
-        text = original_text
+        # HACK: we add a space to the beginning of the text so that the first word can be matched
+        # this is necessary because of the redaction regex: fr"(?<=[^A-Z])({phrase})(?=[^A-Z])"
+        text = " " + original_text
 
         phrase_subset = phrases[phrases.length == length]
 
-        # for each phrase in the document of that length
-        for phrase in df[df.length == length].phrase:
+        # for each unique phrase in the document of that length
+        for phrase in df[df.length == length].phrase.unique():
+
+            # skip pure underlines, numbers, and spaces
+            if re.search("^_+$", phrase) or phrase.isnumeric() or phrase.isspace():
+                continue
+
             if not phrase_subset[phrase_subset.index == phrase].empty:
-                print("found:\t\t", phrase)
-
                 text = redact(text, phrase)
-
-            else:
-                print("NOT found:\t", phrase)
 
         text = cleanup(text)
 
@@ -82,8 +88,9 @@ def make_html(text):
             <style>
                 p {{
                     text-indent: 5em;
+                    font-family: "New Century Schoolbook", Times, serif;
                 }}
-                span.redacted {{
+                span.redact {{
                     background-color: #000000;
                 }}
             </style>
@@ -98,17 +105,21 @@ def make_html(text):
 
 
 def cleanup(text):
+    # turn double newlines into paragraphs
     cleaned = re.sub("\n\n", "</p><p>", text)
 
+    # wrap the whole text in a paragraph
     cleaned = f"<p>{cleaned}</p>"
 
     return cleaned
 
 
 def redact(text, phrase):
-    print(f"redacting '{phrase}'")
+    if phrase in '<span class="redacted':
+        print("PROBLEMATIC PHRASE DETECTED:", phrase, "occurs in the html")
 
-    redacted_text = re.sub(phrase, r'<span class="redacted">\g<0></span>', text, flags=re.I)
+    # try to match the phrase only if it's surrounded by characters that aren't letters
+    redacted_text = re.sub(fr"(?<=[^A-Z])({phrase})(?=[^A-Z])", r'<span class="redact">\g<1></span>', text, flags=re.I)
 
     return redacted_text
 
