@@ -102,8 +102,9 @@ def make_html(text):
                     text-indent: 5em;
                     font-family: "New Century Schoolbook LT Pro", Times, serif;
                 }}
-                span {{
+                b {{
                     background-color: #000000;
+                    font-weight: normal;
                 }}
             </style>
         
@@ -127,12 +128,19 @@ def cleanup(text):
 
 
 def redact(text, phrase):
-    # try to match the phrase only if it's surrounded by characters that aren't letters or less than/greater than signs
-    # this avoids matching words like "a" or "span"
-    redacted_text = re.sub(fr"(?<=[^A-Z</])({phrase})(?=[^A-Z>])",
-                           r'<span>\g<1></span>',
-                           text,
-                           flags=re.I)
+    # allow spaces to also be <b> or </b> tags.  This allows nested tags
+    subbed = phrase.replace(" ", "(?: |</?b> )")
+
+    # allow the phrase to begin or end with a tag
+    subbed = f"(?:</?b>)?{subbed}(?:</?b>)?"
+
+    # wrap redacted text in a <b> tag. we use <b> rather than <span> or <i> because "b" is not a word whereas
+    # "span" and "i" are words, which makes for complicated edge cases.
+    # we only match the phrase if the characters before and after it are not letters
+    # this avoids matching words inside other words
+    redacted_text = re.sub(fr"(?<=[^A-Za-z])({subbed})(?=[^A-Za-z])",
+                           r'<b>\g<1></b>',
+                           text)
 
     return redacted_text
 
