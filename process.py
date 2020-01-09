@@ -14,19 +14,20 @@ def process(df: pd.DataFrame):
     matcher = Matcher(nlp.vocab)
 
     # the basic pattern matches tokens that are not punctuation, spaces, symbols, numbers, or unrecognized tokens
-    unigram = [
+    valid_token = [
         {"POS": {"NOT_IN": ["PUNCT", "SPACE", "SYM", "NUM", "X"]}}
     ]
 
-    # optional comma allows for comma-delimited phrases
-    another = [
+    # an optional comma allows for comma-delimited phrases
+    another_valid_token = [
         {"TEXT": ",", "OP": "?"},
         {"POS": {"NOT_IN": ["PUNCT", "SPACE", "SYM", "NUM", "X"]}}
     ]
 
-    # add patterns for unigrams, bigrams, trigrams
+    # we combine these to create patterns for unigrams, bigrams, trigrams
     for length in range(0, 3):
-        matcher.add(f"{length + 1}", None, unigram + another * length)
+        # length + 1 makes for a more human-readable pattern name
+        matcher.add(f"{length + 1}", None, valid_token + another_valid_token * length)
 
     # use multiprocessing for speed, one batch per CPU
     # but at most use only as many CPUs as we have rows
@@ -42,6 +43,8 @@ def process(df: pd.DataFrame):
 
 
 def worker(df, nlp, matcher):
+    # this function does the actual work
+
     rows = []
 
     # for each opinion in the dataframe
@@ -49,10 +52,10 @@ def worker(df, nlp, matcher):
 
         print("processing", opinion.filename)
 
-        # parse with spaCy
+        # parse the text with spaCy
         doc = nlp(opinion.text)
 
-        # for each sentence in the opinion
+        # for each sentence in the parsed text
         for sent in doc.sents:
 
             # skip direct quotations
@@ -63,27 +66,28 @@ def worker(df, nlp, matcher):
             sent_doc = sent.as_doc()
 
             # add the entire sentence, assuming it has a verb
-            # this avoids false positive "sentences" caused by citations
+            # this avoids false positive "sentences" caused by citations and other fragments
             if any([t.pos_ in ["VERB", "AUX"] for t in sent_doc]):
                 rows.append({
                     "filename": opinion.filename,
-                    "phrase": sent_doc.text.lower().strip(),
+                    "phrase": sent_doc.text.strip(),
                     "length": "sentence"
                 })
 
             # for each ngram match
             for match_id, start, end in matcher(sent_doc):
-                phrase = sent_doc[start:end].text.lower().strip()
+                phrase = sent_doc[start:end].text.strip()
 
-                # special case for underscores, which spaCy wrongly tags as nouns
+                # special case for underscores, which spaCy wrongly tags as nouns and we do not want to include
                 if "_" in phrase:
                     continue
 
-                # add to the results
+                # add the phrase to the results
                 rows.append({
                     "filename": opinion.filename,
                     "phrase": phrase,
-                    # we use this instead of `end - start` so that we don't count commas as part of the length
+                    # we use the pattern name instead of `end - start`
+                    # so that we don't count commas as part of the length
                     "length": sent_doc.vocab.strings[match_id]
                 })
 

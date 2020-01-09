@@ -27,59 +27,71 @@ def main():
 
     # load the phrase data
     print("loading phrase data")
-    if args.debug:
-        # this is roughly a 10% sample
-        nrows = 12 * 1000 * 1000
-    else:
-        nrows = None
 
-    phrases = pd.read_csv("data/phrases.csv", usecols=["filename", "length", "phrase"], nrows=nrows)
+    # this is roughly a 10% sample for debugging purposes
+    nrows = 12 * 1000 * 1000 if args.debug else None
+
+    antecedents = pd.read_csv("data/phrases.csv", usecols=["filename", "length", "phrase"], nrows=nrows)
 
     # join phrase and opinion data
     print("merging phrase and opinion data")
-    phrases = phrases.merge(opinions)
+    antecedents = antecedents.merge(opinions)
 
     # subset to remove anything newer than the input file and anything by the same author
     print("removing phrases from opinions on or after", year, "or written by", author)
-    phrases = phrases[(phrases.year < year) & (phrases.author != author)]
+    antecedents = antecedents[(antecedents.year < year) & (antecedents.author != author)]
 
     print("dropping phrases duplicated within the same opinion")
     df = df.drop_duplicates(subset=["filename", "phrase"])
 
     print("indexing phrases")
-    phrases = phrases.set_index("phrase").sort_index()
+    antecedents = antecedents.set_index("phrase").sort_index()
 
-    # load spacy
-    print("loading spacy")
+    # pre-compute which phrases occur within the first 5 years of the data
+    print("pre-computing phrases from the first 5 years of data")
+    old_phrases = antecedents[antecedents.year <= antecedents.year.min() + 5]
+    # only keep a single instance of each old phrase, since that's sufficient for this purpose
+    old_phrases = old_phrases[~old_phrases.index.duplicated(keep="first")]
+
+    # compute phrases that only occur after those first 5 years
+    modern_antecedents = antecedents[~antecedents.index.isin(old_phrases.index)]
 
     # for each phrase length
-    for length in ["1", "2", "3", "sentence"]:
+    for length in df.length.unique():
+        for modern_antecedents_only in [True, False]:
 
-        # HACK: we add a space to the beginning of the text so that the first word can be matched
-        # this is necessary because of the redaction regex: fr"(?<=[^A-Z])({phrase})(?=[^A-Z])"
-        text = " " + original_text
+            print("computing with length ==", length, "and modern antecedents only ==", modern_antecedents_only)
 
-        phrase_subset = phrases[phrases.length == length]
+            # HACK: we add a space to the beginning of the text so that the first word can be matched
+            # this is necessary because of the redaction regex: fr"(?<=[^A-Z])({phrase})(?=[^A-Z])"
+            text = " " + original_text
 
-        # for each unique phrase in the document of that length
-        for phrase in df[df.length == length].phrase.unique():
+            if modern_antecedents_only:
+                phrase_subset = modern_antecedents[modern_antecedents.length == length]
 
-            # skip pure underlines, numbers, and spaces
-            if re.search("^_+$", phrase) or phrase.isnumeric() or phrase.isspace():
-                continue
+            else:
+                phrase_subset = antecedents[antecedents.length == length]
 
-            if not phrase_subset[phrase_subset.index == phrase].empty:
-                text = redact(text, phrase)
+            # for each unique phrase in the document of that length
+            for phrase in df[df.length == length].phrase.unique():
 
-        text = cleanup(text)
+                # skip pure underlines, numbers, and spaces
+                if re.search("^_+$", phrase) or phrase.isnumeric() or phrase.isspace():
+                    continue
 
-        html = make_html(text)
+                # if this phrase was found in the antecedents, redact it
+                if not phrase_subset[phrase_subset.index == phrase].empty:
+                    text = redact(text, phrase)
 
-        html_filename = f"{lexis_cite.replace(' ', '_')}_{length}.html"
+            text = cleanup(text)
 
-        print("writing out", html_filename)
-        with open(f"data/redactions/{html_filename}", "w") as f:
-            f.write(html)
+            html = make_html(text)
+
+            html_filename = f"{'DEBUG_' if args.debug else ''}{lexis_cite.replace(' ', '_')}_{length}{'_modern' if modern_antecedents_only else ''}.html"
+
+            print("writing out", html_filename)
+            with open(f"data/redactions/{html_filename}", "w") as f:
+                f.write(html)
 
 
 def make_html(text):
@@ -88,9 +100,9 @@ def make_html(text):
             <style>
                 p {{
                     text-indent: 5em;
-                    font-family: "New Century Schoolbook", Times, serif;
+                    font-family: "New Century Schoolbook LT Pro", Times, serif;
                 }}
-                span.redact {{
+                span {{
                     background-color: #000000;
                 }}
             </style>
@@ -115,11 +127,12 @@ def cleanup(text):
 
 
 def redact(text, phrase):
-    if phrase in '<span class="redacted':
-        print("PROBLEMATIC PHRASE DETECTED:", phrase, "occurs in the html")
-
-    # try to match the phrase only if it's surrounded by characters that aren't letters
-    redacted_text = re.sub(fr"(?<=[^A-Z])({phrase})(?=[^A-Z])", r'<span class="redact">\g<1></span>', text, flags=re.I)
+    # try to match the phrase only if it's surrounded by characters that aren't letters or less than/greater than signs
+    # this avoids matching words like "a" or "span"
+    redacted_text = re.sub(fr"(?<=[^A-Z</])({phrase})(?=[^A-Z>])",
+                           r'<span>\g<1></span>',
+                           text,
+                           flags=re.I)
 
     return redacted_text
 
