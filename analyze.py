@@ -1,8 +1,15 @@
 import argparse
+import re
 
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+
+
+def mentions_mobile_phones(text):
+    if re.search(r"(mobile|cellular|cell|smart)[ \-]?(tele)?phone", text, flags=re.I):
+        return True
+    return False
 
 
 def main():
@@ -11,11 +18,25 @@ def main():
     args = parser.parse_args()
 
     print("loading opinion data")
-    opinions = pd.read_csv("data/opinions.csv", usecols=["filename", "year", "lexis_cite", "opinion_type", "author"], )
+    opinions = pd.read_csv("data/opinions.csv")
+
+    # calculate majority opinion or not
+    opinions["majority_opinion"] = opinions.opinion_type == "MO"
+
+    # calculate whether the opinion mentions mobile phones
+    opinions["mobile_phone"] = opinions.text.apply(mentions_mobile_phones)
+
+    # drop no longer needed text column
+    del opinions["text"]
+
+    # calculate the most frequent author, JPS
+    most_frequent_authors = opinions.groupby("author").filename.count().sort_values(ascending=False)
+    most_frequent_author = most_frequent_authors.reset_index().author.iloc[0]
+    assert most_frequent_author == "JPS"
 
     if args.debug:
-        print("subsetting to 10% sample for debugging")
-        opinion_sample = np.random.choice(opinions.filename, int(len(opinions) * 0.1), False)
+        print("subsetting to 5% sample for debugging")
+        opinion_sample = np.random.choice(opinions.filename, int(len(opinions) * 0.05), False)
         opinions = opinions[opinions.filename.isin(opinion_sample)]
 
     print("loading phrases")
@@ -40,15 +61,16 @@ def main():
     # initialize results container
     results = []
 
-    # TODO parallelize this?  could be memory intensive given the size of the phrase df, but still
-    #  worth it even for a few chunks; runtime is around 4.5 hours right now
-
-    # TODO should also profile this code to identify the slow spots
-
     # for each opinion in the most recent year
     for filename in tqdm(df[df.year == opinions.year.max()].filename.unique(), desc="finding antecedents"):
         # get the opinion author
         author = opinions[opinions.filename == filename].author.iloc[0]
+
+        # get whether this is a majority opinion or not
+        majority_opinion = opinions[opinions.filename == filename].majority_opinion.iloc[0]
+
+        # get whether this is an opinion that mentions mobile phones or not
+        mobile_phone = opinions[opinions.filename == filename].mobile_phone.iloc[0]
 
         # for each phrase length
         for length in df["length"].unique():
@@ -66,21 +88,46 @@ def main():
             # (i.e. trying to exclude generic legal phrasing that would, in some sense, be "out of copyright")
             modern_antecedents = antecedents[~antecedents.index.isin(old_phrases.index)]
 
-            phrase_count = phrases.index.nunique()
-            antecedent_count = antecedents.index.nunique()
-            modern_antecedent_count = modern_antecedents.index.nunique()
+            # count how many occur in opinions written by a single other author
+            most_frequent_author_antecedents = df[(df.index.isin(phrases.index)
+                                                   & (df.author == most_frequent_author))
+                                                  & (df.year < opinions.year.max())
+                                                  & (df["length"] == length)]
+
+            # count how many occur in opinions not of this type
+            other_opinion_type_antecedents = df[(df.index.isin(phrases.index)
+                                                 & (df.majority_opinion != majority_opinion)
+                                                 & (df.author != author))
+                                                & (df.year < opinions.year.max())
+                                                & (df["length"] == length)]
+
+            # count how many occur in opinions that do/don't mention cell phones
+            mobile_phone_antecedents = df[(df.index.isin(phrases.index)
+                                           & (df.majority_opinion != mobile_phone)
+                                           & (df.author != author))
+                                          & (df.year < opinions.year.max())
+                                          & (df["length"] == length)]
 
             results.append({
                 "filename": filename,
+                "author": author,
+                "majority_opinion": majority_opinion,
+                "mentions_mobile_phones": mobile_phone,
                 "phrase_length": length,
-                "n_phrases": phrase_count,
-                "n_antecedents": antecedent_count,
-                "n_modern_antecedents": modern_antecedent_count
+                "n_phrases": phrases.index.nunique(),
+                "n_antecedents": antecedents.index.nunique(),
+                "n_modern_antecedents": modern_antecedents.index.nunique(),
+                "n_most_frequent_author_antecedents": most_frequent_author_antecedents.index.nunique(),
+                "n_other_opinion_type_antecedents": other_opinion_type_antecedents.index.nunique(),
+                "n_mobile_phone_antecedents": mobile_phone_antecedents.index.nunique()
             })
 
     results = pd.DataFrame(results)
     results["antecedent_fraction"] = results.n_antecedents / results.n_phrases
     results["modern_antecedent_fraction"] = results.n_modern_antecedents / results.n_phrases
+    results["most_frequent_author_antecedent_fraction"] = results.n_most_frequent_author_antecedents / results.n_phrases
+    results["other_opinion_type_antedecedent_fraction"] = results.n_other_opinion_type_antecedents / results.n_phrases
+    results["mobile_phone_antecedent_fraction"] = results.n_mobile_phone_antecedents / results.n_phrases
 
     results.to_csv("data/antecedent_counts.csv", index=False)
 
