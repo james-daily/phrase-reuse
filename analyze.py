@@ -68,6 +68,8 @@ def main():
     if args.chunks is not None and args.chunk_num is not None:
         print(f"processing chunk {args.chunk_num} of {args.chunks}")
         opinions_to_analyze = np.array_split(opinions_to_analyze, args.chunks)[args.chunk_num]
+    else:
+        print("processing all data in one process")
 
     # for each opinion to analyze
     for filename in tqdm(opinions_to_analyze, desc="finding antecedents"):
@@ -137,7 +139,13 @@ def main():
     results["other_opinion_type_antedecedent_fraction"] = results.n_other_opinion_type_antecedents / results.n_phrases
     results["mobile_phone_antecedent_fraction"] = results.n_mobile_phone_antecedents / results.n_phrases
 
-    results.to_csv(f"data/antecedent_counts_{args.chunk_num}_of_{args.chunks}.csv", index=False)
+    if args.chunk_num is not None and args.chunks is not None:
+        output_filename = f"data/antecedent_counts_{args.chunk_num}_of_{args.chunks}.csv"
+    else:
+        output_filename = f"data/antecedent_counts.csv"
+
+    print("writing out", output_filename)
+    results.to_csv(output_filename, index=False)
 
 
 if __name__ == '__main__':
