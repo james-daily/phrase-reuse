@@ -10,7 +10,7 @@ def spawn_process(i, num_chunks):
 
     cmd = [
         "python", "-u", "analyze.py",
-        "--chunks", num_chunks, "--chunk_num", i
+        "--chunks", str(num_chunks), "--chunk_num", str(i)
     ]
 
     cmd = " ".join(cmd)
