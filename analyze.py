@@ -15,6 +15,8 @@ def mentions_mobile_phones(text):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", "-d", action="store_true")
+    parser.add_argument("--chunks", type=int)
+    parser.add_argument("--chunk_num", type=int)
     args = parser.parse_args()
 
     print("loading opinion data")
@@ -61,8 +63,14 @@ def main():
     # initialize results container
     results = []
 
-    # for each opinion in the most recent year
-    for filename in tqdm(df[df.year == opinions.year.max()].filename.unique(), desc="finding antecedents"):
+    # get opinions in the most recent year
+    opinions_to_analyze = df[df.year == opinions.year.max()].filename.unique()
+    if args.chunks is not None and args.chunk_num is not None:
+        print(f"processing chunk {args.chunk_num} of {args.chunks}")
+        opinions_to_analyze = np.array_split(opinions_to_analyze, args.chunks)[args.chunk_num]
+
+    # for each opinion to analyze
+    for filename in tqdm(opinions_to_analyze, desc="finding antecedents"):
         # get the opinion author
         author = opinions[opinions.filename == filename].author.iloc[0]
 
@@ -129,7 +137,7 @@ def main():
     results["other_opinion_type_antedecedent_fraction"] = results.n_other_opinion_type_antecedents / results.n_phrases
     results["mobile_phone_antecedent_fraction"] = results.n_mobile_phone_antecedents / results.n_phrases
 
-    results.to_csv("data/antecedent_counts.csv", index=False)
+    results.to_csv(f"data/antecedent_counts_{args.chunk_num}_of_{args.chunks}.csv", index=False)
 
 
 if __name__ == '__main__':
